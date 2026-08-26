@@ -24,7 +24,7 @@ const archMap = {
 
 const platform = platformMap[os.platform()] ?? os.platform()
 const arch = archMap[os.arch()] ?? os.arch()
-const base = `workmesh-${platform}-${arch}`
+const base = `workmesh-bin-${platform}-${arch}`
 const sourceBinary = platform === "windows" ? "workmesh.exe" : "workmesh"
 const targetBinary = path.join(__dirname, "bin", "workmesh.exe")
 
