@@ -76,6 +76,7 @@ await Bun.file(`./dist/workmesh/package.json`).write(
       name: "workmesh",
       bin: {
         workmesh: "./bin/workmesh.exe",
+        workcode: "./bin/workmesh.exe",
       },
       scripts: {
         postinstall: "node ./postinstall.mjs",
