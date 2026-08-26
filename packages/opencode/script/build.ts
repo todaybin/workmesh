@@ -146,7 +146,7 @@ if (!skipInstall) {
 }
 for (const item of targets) {
   const name = [
-    "workmesh-bin",
+    binary === "bun" ? "bun" : "workmesh-bin",
     // changing to win32 flags npm for some reason
     item.os === "win32" ? "windows" : item.os,
     item.arch,
