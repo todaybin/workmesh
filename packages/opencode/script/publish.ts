@@ -26,12 +26,13 @@ async function publish(dir: string, name: string, version: string) {
       await $`npm publish *.tgz --access public --tag ${Script.channel} --fetch-retries=5 --fetch-retry-mintimeout=30000 --fetch-retry-maxtimeout=120000`.cwd(
         dir,
       )
+      await new Promise((r) => setTimeout(r, 60000))
       break
     } catch (e: any) {
       const msg = String(e?.stderr ?? e?.message ?? e)
       if (/429|rate limit|ETOOMANY/i.test(msg) && attempt < 8) {
         attempt++
-        const wait = 20000 * attempt
+        const wait = 60000 * attempt
         console.log(`rate limited publishing ${name}, retry ${attempt} after ${wait}ms`)
         await new Promise((r) => setTimeout(r, wait))
         continue
