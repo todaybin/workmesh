@@ -20,7 +20,25 @@ async function publish(dir: string, name: string, version: string) {
     return
   }
   await $`bun pm pack`.cwd(dir)
-  await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(dir)
+  let attempt = 0
+  while (true) {
+    try {
+      await $`npm publish *.tgz --access public --tag ${Script.channel} --fetch-retries=5 --fetch-retry-mintimeout=30000 --fetch-retry-maxtimeout=120000`.cwd(
+        dir,
+      )
+      break
+    } catch (e: any) {
+      const msg = String(e?.stderr ?? e?.message ?? e)
+      if (/429|rate limit|ETOOMANY/i.test(msg) && attempt < 8) {
+        attempt++
+        const wait = 20000 * attempt
+        console.log(`rate limited publishing ${name}, retry ${attempt} after ${wait}ms`)
+        await new Promise((r) => setTimeout(r, wait))
+        continue
+      }
+      throw e
+    }
+  }
 }
 
 const binaries: Record<string, string> = {}
@@ -72,10 +90,9 @@ await Bun.file(`./dist/workmesh/package.json`).write(
   ),
 )
 
-const tasks = Object.entries(binaries).map(async ([name]) => {
+for (const [name] of Object.entries(binaries)) {
   await publish(`./dist/${name}`, name, binaries[name])
-})
-await Promise.all(tasks)
+}
 await publish(`./dist/workmesh`, "workmesh", version)
 
 const image = "ghcr.io/anomalyco/opencode"
