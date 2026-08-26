@@ -42,7 +42,7 @@ await Bun.file(`./dist/workmesh/bin/workmesh.exe`).write(
     'echo "This occurs when using --ignore-scripts during installation, or when using a" >&2',
     'echo "package manager like pnpm that does not run postinstall scripts by default." >&2',
     'echo "" >&2',
-    'echo "To fix this, run the postinstall script manually:" >&2`,
+    'echo "To fix this, run the postinstall script manually:" >&2',
     `echo "  cd node_modules/workmesh && node postinstall.mjs" >&2`,
     'echo "" >&2',
     `echo "Or reinstall workmesh without the --ignore-scripts flag." >&2`,
