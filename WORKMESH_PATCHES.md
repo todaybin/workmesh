@@ -4,9 +4,9 @@
 
 - 仓库：`https://github.com/anomalyco/opencode.git`
 - 分支：`dev`
-- 提交：`03bba464d46f3eddf74195919b1344aa937f7b11`
-- 版本：`1.18.21`
-- WorkMesh 补丁版本：`0.7.2`
+- 提交：`3f31551fad2b04391ea2a1cc383c8788382fc2b0`
+- 版本：`1.18.23`
+- WorkMesh 补丁版本：`0.7.3`
 
 机器可读基线和允许修改路径见 `WORKMESH_PATCHES.json`。官方仓库只用于 fetch、对比和 subtree 同步，WorkMesh 不向该仓库推送代码。
 
@@ -35,11 +35,14 @@
 
 ## 同步规则
 
-1. 运行 `pnpm.cmd opencode:upstream:check` 确认 subtree 和远端边界。
-2. Fetch `opencode-upstream/dev`，审查当前基线到目标提交的上游变化。
-3. 使用 `git subtree pull --prefix packages/workmesh opencode-upstream dev` 合并，不使用 `--squash`。
-4. 解决冲突后更新本文件和 `WORKMESH_PATCHES.json` 的提交、版本、补丁路径及验证结果。
-5. 运行 `pnpm.cmd opencode:upstream:diff`、OpenCode 类型检查、运行时构建和 Tool Host 测试。
+实际同步以 `scripts/opencode-fork.mjs` 为准：本仓库是 `todaybin/workmesh` 独立 fork，上游 `anomalyco/opencode` 只读（禁用 push），**不使用 subtree**。
+
+1. 运行 `pnpm opencode:upstream:check` 确认远端边界（origin 指向 `todaybin/workmesh`，upstream 指向 `anomalyco/opencode` 且只读）与基线提交可达。
+2. `git fetch upstream` 拉取最新 `dev`；如需减少传输，可对目标提交与基线提交用 `git fetch --depth 1 --filter=blob:none upstream <commit>` 浅层获取。
+3. 计算 WorkMesh 补丁集：`git diff <旧基线> <旧 main> -- <registeredPaths 中排除生成物>`，得到 147 个登记路径的改动（非生成物）；生成物（`packages/client/src/generated`、`generated-effect`、`packages/sdk/js/src/v2/gen`、`packages/sdk/openapi.json`、`packages/core/src/database/migration.gen.ts`、`schema.gen.ts`）不随补丁搬运，改由 `bun run generate`（client / sdk/js）与 `bun --cwd packages/core script/migration.ts`（core，重写迁移注册与全量 schema）重新生成。
+4. 从目标 `upstream/dev` 提交新建同步分支：`git checkout -b sync-opencode-<版本> upstream/dev`，再以 `git apply --3way` 重放补丁；冲突文件保留 WorkMesh 行为并吸收上游结构变化。
+5. 重新生成代码后，更新本文件与 `WORKMESH_PATCHES.json` 的提交、版本、补丁版本并追加验证记录。
+6. 运行 `pnpm opencode:upstream:check`、`pnpm opencode:upstream:diff`、各包 `bun typecheck`、`pnpm build:opencode-runtime` 与定向测试，确认仅登记路径变动且构建通过。
 
 ## 验证记录
 
@@ -83,5 +86,12 @@
 - 定向测试：compaction、session/prompt、retry、tool/task 批量运行 193 pass / 5 fail / 1 error（短默认超时下的时序抖动）；其中 `session.compaction.process > stops quickly when aborted during retry backoff` 为基线已记录的 Windows 中断耗时 >250ms 既有失败，`loops` 套件独立运行 5 pass 0 fail（并行负载下时序抖动），`language` 注入用例的断言文字过期（`Language preference: Use Simplified Chinese`）已修正为当前 `${当前语言为简体中文}` 实际注入文本。
 - `test/workmesh/` 运行 35 pass / 1 fail：`runtime-layout` 的 `walks through a directory without its own Git marker` 依赖临时目录无 `.git` 的环境假设，与本次同步无关。
 - 安全结论：本次仅更新 OpenCode subtree、补丁基线与验证记录，不改变 WorkMesh 数据库结构、公开 API、权限模型、Runner 沙箱或网络策略；官方远端仍保持只读。
+
+- 2026-08-26 将 `upstream/dev` 从 `03bba464d46f3eddf74195919b1344aa937f7b11`（OpenCode `1.18.21`）非 squash 同步到 `3f31551fad2b04391ea2a1cc383c8788382fc2b0`（OpenCode `1.18.23`，2 个次版本、少量提交）。本仓库为 `todaybin/workmesh` 独立 fork（非 subtree），基线提交与目标提交均经 `git fetch upstream` 浅层获取后可达。
+- 补丁重放方式：计算 `git diff 03bba464 <旧 main> -- <registeredPaths 排除生成物>` 得到 147 个登记路径改动（66 新增 / 81 修改），以 `git apply --3way` 应用到 `upstream/dev`；生成物（`client/src/generated`、`generated-effect`、`sdk/js/src/v2/gen`、`sdk/openapi.json`、`core` 的 `migration.gen.ts` / `schema.gen.ts`）不随补丁搬运，分别由 `bun run generate`（client / sdk/js）与 `bun --cwd packages/core script/migration.ts`（core，重写迁移注册与全量 schema）重新生成，未产生多余迁移。
+- `opencode:upstream:check` 通过：基线 `3f31551f...` 可达，工作树相对 `upstream/dev` 的全部变更均落在登记路径内。
+- core / opencode / tui / client / sdk / schema 六包 `bun typecheck` 通过（生成物重新生成后类型一致）。
+- 定向测试：`bun --cwd packages/opencode test test/workmesh` 27 pass / 1 fail（唯一失败为 `runtime layout > walks through a directory without its own Git marker`，依赖临时目录无 `.git` 的环境假设，与本次同步无关，基线记录已注明）；`bun --cwd packages/core test` 自定义套件 8 pass / 2 fail（失败为 MoveSession 内部 `git apply` 在本机 `core.autocrlf=true` 下失败，属环境差异，非合并回归）。
+- 安全结论：本次仅更新 OpenCode 基线、重放 WorkMesh 补丁与重新生成代码，不改变 WorkMesh 数据库结构语义（新增迁移已在注册中）、公开 API、权限模型、Runner 沙箱或网络策略；官方上游远端仍保持只读，未向 `anomalyco/opencode` 推送。
 
 构建机无法连接 `https://models.dev/api.json` 时，构建必须显式提供 `MODELS_DEV_API_JSON`；正式发布应使用经过审查的最新模型快照。

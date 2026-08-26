@@ -2,9 +2,9 @@
   "schemaVersion": "workmesh.opencode-patches.v1",
   "upstreamRepository": "https://github.com/anomalyco/opencode.git",
   "upstreamBranch": "dev",
-  "upstreamCommit": "03bba464d46f3eddf74195919b1344aa937f7b11",
-  "upstreamVersion": "1.18.21",
-  "workmeshPatchVersion": "0.7.2",
+  "upstreamCommit": "3f31551fad2b04391ea2a1cc383c8788382fc2b0",
+  "upstreamVersion": "1.18.23",
+  "workmeshPatchVersion": "0.7.3",
   "registeredPaths": [
     "WORKMESH_PATCHES.json",
     "WORKMESH_PATCHES.md",
