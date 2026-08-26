@@ -31,32 +31,32 @@ for (const filepath of new Bun.Glob("*/package.json").scanSync({ cwd: "./dist" }
 console.log("binaries", binaries)
 const version = Object.values(binaries)[0]
 
-await $`mkdir -p ./dist/${pkg.name}`
-await $`mkdir -p ./dist/${pkg.name}/bin`
-await $`cp ./script/postinstall.mjs ./dist/${pkg.name}/postinstall.mjs`
-await Bun.file(`./dist/${pkg.name}/LICENSE`).write(await Bun.file("../../LICENSE").text())
-await Bun.file(`./dist/${pkg.name}/bin/${pkg.name}.exe`).write(
+await $`mkdir -p ./dist/workmesh`
+await $`mkdir -p ./dist/workmesh/bin`
+await $`cp ./script/postinstall.mjs ./dist/workmesh/postinstall.mjs`
+await Bun.file(`./dist/workmesh/LICENSE`).write(await Bun.file("../../LICENSE").text())
+await Bun.file(`./dist/workmesh/bin/workmesh.exe`).write(
   [
-    `echo "Error: ${pkg.name}-ai's postinstall script was not run." >&2`,
+    `echo "Error: workmesh's postinstall script was not run." >&2`,
     'echo "" >&2',
     'echo "This occurs when using --ignore-scripts during installation, or when using a" >&2',
     'echo "package manager like pnpm that does not run postinstall scripts by default." >&2',
     'echo "" >&2',
-    'echo "To fix this, run the postinstall script manually:" >&2',
-    `echo "  cd node_modules/${pkg.name}-ai && node postinstall.mjs" >&2`,
+    'echo "To fix this, run the postinstall script manually:" >&2`,
+    `echo "  cd node_modules/workmesh && node postinstall.mjs" >&2`,
     'echo "" >&2',
-    `echo "Or reinstall ${pkg.name}-ai without the --ignore-scripts flag." >&2`,
+    `echo "Or reinstall workmesh without the --ignore-scripts flag." >&2`,
     "exit 1",
     "",
   ].join("\n"),
 )
 
-await Bun.file(`./dist/${pkg.name}/package.json`).write(
+await Bun.file(`./dist/workmesh/package.json`).write(
   JSON.stringify(
     {
-      name: pkg.name + "-ai",
+      name: "workmesh",
       bin: {
-        [pkg.name]: `./bin/${pkg.name}.exe`,
+        workmesh: "./bin/workmesh.exe",
       },
       scripts: {
         postinstall: "node ./postinstall.mjs",
@@ -76,7 +76,7 @@ const tasks = Object.entries(binaries).map(async ([name]) => {
   await publish(`./dist/${name}`, name, binaries[name])
 })
 await Promise.all(tasks)
-await publish(`./dist/${pkg.name}`, `${pkg.name}-ai`, version)
+await publish(`./dist/workmesh`, "workmesh", version)
 
 const image = "ghcr.io/anomalyco/opencode"
 const platforms = "linux/amd64,linux/arm64"
@@ -84,7 +84,7 @@ const tags = [`${image}:${version}`, `${image}:${Script.channel}`]
 const tagFlags = tags.flatMap((t) => ["-t", t])
 
 // registries
-if (!Script.preview) {
+if (process.env.WORKMESH_PUBLISH_EXTRAS === "1") {
   await $`docker buildx build --platform ${platforms} ${tagFlags} --push .`
   // Calculate SHA values
   const arm64Sha = await $`sha256sum ./dist/opencode-linux-arm64.tar.gz | cut -d' ' -f1`.text().then((x) => x.trim())
