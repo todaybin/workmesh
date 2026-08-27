@@ -176,7 +176,7 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(binary, "bun") as any,
+      target: (["bun", item.os === "win32" ? "windows" : item.os, item.arch, item.avx2 === false ? "baseline" : undefined, item.abi === "musl" ? "musl" : undefined].filter(Boolean).join("-")) as any,
       outfile: `dist/${name}/bin/${binary}`,
       execArgv: [`--user-agent=${binary}/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
