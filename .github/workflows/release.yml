@@ -10,6 +10,11 @@ on:
         description: "Release version (e.g. 0.1.0)"
         required: true
         default: "0.1.0"
+      publish:
+        description: "Publish to npm and create GitHub release"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -48,11 +53,13 @@ jobs:
           fi
 
       - name: Setup npm auth
+        if: ${{ inputs.publish }}
         run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
+        if: ${{ inputs.publish }}
         run: gh release create v${OPENCODE_VERSION} -d --target ${GITHUB_SHA} --title "v${OPENCODE_VERSION}" --notes "Workmesh 公开发布 v0.1.0"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,11 +79,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish to npm
+        if: ${{ inputs.publish }}
         continue-on-error: true
         run: bun run --cwd packages/opencode script/publish.ts
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify published
+        if: ${{ inputs.publish }}
         continue-on-error: true
         run: npm view workmesh@latest version
