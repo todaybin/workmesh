@@ -75,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: workmesh-windows-x64-baseline
-          path: packages/opencode/dist/workmesh-windows-x64-baseline
+          path: packages/opencode/dist/workmesh-bin-windows-x64-baseline
           if-no-files-found: warn
 
       - name: Publish to npm
