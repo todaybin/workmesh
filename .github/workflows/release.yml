@@ -63,7 +63,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MODELS_DEV_API_JSON: ${{ secrets.MODELS_DEV_API_JSON }}
 
+      - name: Upload baseline binary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workmesh-windows-x64-baseline
+          path: packages/opencode/dist/workmesh-windows-x64-baseline
+          if-no-files-found: warn
+
       - name: Publish to npm
+        continue-on-error: true
         run: bun run --cwd packages/opencode script/publish.ts
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
