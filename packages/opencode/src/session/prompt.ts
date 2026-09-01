@@ -186,6 +186,16 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const goal = yield* SessionGoal.Service
+    const publishGoal = (sessionID: SessionID, messageID: string) =>
+      Effect.gen(function* () {
+        const current = yield* goal.get(sessionID)
+        yield* events.publish(Command.Event.Executed, {
+          name: "goal",
+          sessionID,
+          arguments: JSON.stringify(current ?? null),
+          messageID: messageID as MessageID,
+        })
+      })
     const loops = yield* WorkMeshLoops.Service
     const workmeshLanguage = yield* WorkMeshLanguage.Service
     const database = yield* Database.Service
@@ -1190,7 +1200,7 @@ const layer = Layer.effect(
 
       if (input.noReply === true) return message
       const result = yield* loop({ sessionID: input.sessionID })
-      if (!WorkMeshProduct.enabled || input.agent !== "compose" || !composeSpecReady(result)) return result
+      if (input.agent !== "compose" || !composeSpecReady(result)) return result
       const service = yield* composeRuntime()
       const run = (yield* composeAsync(() => service.list())).find(
         (item) => item.sessionID === input.sessionID && item.mode === "interactive" && item.phase === "grill",
@@ -1240,7 +1250,6 @@ const layer = Layer.effect(
     })
 
     const init = Effect.fn("SessionPrompt.init")(function* () {
-      if (!WorkMeshProduct.enabled) return
       const data = yield* InstanceState.get(schedulerState)
       if (data.started) return
       data.started = true
@@ -1516,7 +1525,7 @@ const layer = Layer.effect(
             }
           }
 
-          if (WorkMeshProduct.enabled && result === "stop" && !session.parentID) {
+          if (result === "stop" && !session.parentID) {
             const activeGoal = yield* goal.get(sessionID)
             if (activeGoal) {
               const transcript = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
@@ -1533,6 +1542,7 @@ const layer = Layer.effect(
                 )
               if (verdict.ok || verdict.impossible) {
                 yield* goal.clear(sessionID)
+                yield* publishGoal(sessionID, "")
               } else {
                 const attempt = yield* goal.bumpReact(sessionID)
                 if (attempt < MAX_GOAL_REACT) {
@@ -1566,7 +1576,8 @@ const layer = Layer.effect(
                   condition: activeGoal.condition,
                   attempts: attempt,
                 })
-                yield* goal.clear(sessionID)
+                yield* goal.setStatus(sessionID, "stalled")
+                yield* publishGoal(sessionID, "")
               }
             }
           }
@@ -1627,8 +1638,35 @@ const layer = Layer.effect(
       }
       const agentName = cmd.agent ?? input.agent
 
+      const appendCommandMessage = Effect.fn("SessionPrompt.appendCommandMessage")(function* (
+        cmdInput: CommandInput,
+      ) {
+        const session = yield* sessions.get(cmdInput.sessionID).pipe(Effect.orDie)
+        const info: SessionV1.User = {
+          id: MessageID.ascending(),
+          sessionID: cmdInput.sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: session.agent ?? (yield* agents.defaultInfo()).name,
+          model: session.model
+            ? { providerID: session.model.providerID, modelID: session.model.id, variant: session.model.variant }
+            : (yield* currentModel(cmdInput.sessionID)),
+        }
+        const text = `/${cmdInput.command}${cmdInput.arguments ? ` ${cmdInput.arguments}` : ""}`
+        yield* sessions.updateMessage(info)
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: info.id,
+          sessionID: cmdInput.sessionID,
+          type: "text",
+          text,
+        } satisfies SessionV1.TextPart)
+        return info
+      })
+
+      yield* appendCommandMessage(input)
+
       if (
-        WorkMeshProduct.enabled &&
         (input.command === Command.Default.TERMINALS ||
           input.command === Command.Default.MESSAGE ||
           input.command === Command.Default.MESSAGES)
@@ -1731,7 +1769,6 @@ const layer = Layer.effect(
       }
 
       if (
-        WorkMeshProduct.enabled &&
         (input.command === Command.Default.COMPOSE || input.command === Command.Default.COMPOSE_NEXT)
       ) {
         const service = yield* composeRuntime()
@@ -2657,7 +2694,6 @@ const layer = Layer.effect(
       }
 
       if (
-        WorkMeshProduct.enabled &&
         (input.command === Command.Default.LANGUAGE || input.command === Command.Default.LANG)
       ) {
         const value = input.arguments.trim()
@@ -2677,7 +2713,7 @@ const layer = Layer.effect(
         })
       }
 
-      if (WorkMeshProduct.enabled && input.command === Command.Default.LOOPS) {
+      if (input.command === Command.Default.LOOPS) {
         const value = input.arguments.trim().replace(/^(?:cancel|取消)\s+/i, "")
         if (value) {
           const job = yield* loops.resolve(input.sessionID, value)
@@ -2711,10 +2747,12 @@ const layer = Layer.effect(
         })
       }
 
-      if (WorkMeshProduct.enabled && input.command === Command.Default.GOAL) {
+      if (input.command === Command.Default.GOAL) {
         const condition = input.arguments.trim()
-        if (condition === "" || condition === "clear" || condition === "reset" || condition === "取消") {
+        const normalized = condition.toLowerCase()
+        if (normalized === "clear" || normalized === "reset" || normalized === "取消") {
           yield* goal.clear(input.sessionID)
+          yield* publishGoal(input.sessionID, input.messageID ?? "")
           return yield* prompt({
             sessionID: input.sessionID,
             messageID: input.messageID,
@@ -2723,7 +2761,47 @@ const layer = Layer.effect(
             noReply: true,
           })
         }
+        if (normalized === "pause") {
+          yield* goal.pause(input.sessionID)
+          yield* publishGoal(input.sessionID, input.messageID ?? "")
+          return yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            agent: agentName,
+            parts: [{ type: "text", text: "已暂停当前 Goal。使用 /goal resume 恢复。", synthetic: true }],
+            noReply: true,
+          })
+        }
+        if (normalized === "resume") {
+          const current = yield* goal.get(input.sessionID)
+          if (!current) {
+            return yield* prompt({
+              sessionID: input.sessionID,
+              messageID: input.messageID,
+              agent: agentName,
+              parts: [{ type: "text", text: "当前没有可恢复的 Goal。", synthetic: true }],
+              noReply: true,
+            })
+          }
+          yield* goal.resume(input.sessionID)
+          yield* publishGoal(input.sessionID, input.messageID ?? "")
+          return yield* loop({ sessionID: input.sessionID })
+        }
+        if (!condition) {
+          const current = yield* goal.get(input.sessionID)
+          const label = current
+            ? `当前 Goal：${current.condition}（${current.status === "stalled" ? "已挂起" : current.status === "paused" ? "已暂停" : current.status === "complete" ? "已完成" : "进行中"}）`
+            : "当前没有 Goal。使用 /goal <目标> 设置停止条件。"
+          return yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            agent: agentName,
+            parts: [{ type: "text", text: label, synthetic: true }],
+            noReply: true,
+          })
+        }
         yield* goal.set(input.sessionID, condition)
+        yield* publishGoal(input.sessionID, input.messageID ?? "")
       }
 
       const raw = input.arguments.match(argsRegex) ?? []
@@ -2786,9 +2864,21 @@ const layer = Layer.effect(
         throw error
       }
 
-      if (WorkMeshProduct.enabled && input.command === Command.Default.LOOP) {
+      if (input.command === Command.Default.LOOP) {
         yield* init()
-        const parsed = parseLoopArguments(input.arguments)
+        let parsed: ReturnType<typeof parseLoopArguments>
+        try {
+          parsed = parseLoopArguments(input.arguments)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            agent: agentName,
+            parts: [{ type: "text", text: message, synthetic: true }],
+            noReply: true,
+          })
+        }
         const job = yield* loops.createClaimed({
           sessionID: input.sessionID,
           prompt: parsed.prompt,

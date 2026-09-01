@@ -10,7 +10,6 @@ import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
-import { WorkMeshProduct } from "@/workmesh/product"
 import { WorkMeshLanguage } from "@/workmesh/language"
 import { WorkMeshCommandLocale } from "@/workmesh/command-locale"
 
@@ -76,7 +75,7 @@ const WORKMESH_RESERVED = new Set<string>([
 ])
 
 function isWorkMeshReserved(name: string) {
-  return WorkMeshProduct.enabled && WORKMESH_RESERVED.has(name)
+  return WORKMESH_RESERVED.has(name)
 }
 
 function localize(command: Info, language: WorkMeshLanguage.Language) {
@@ -125,7 +124,6 @@ const layer = Layer.effect(
         subtask: true,
         hints: hints(PROMPT_REVIEW),
       }
-      if (WorkMeshProduct.enabled) {
         localized
           .add(Default.INIT)
           .add(Default.REVIEW)
@@ -151,7 +149,7 @@ const layer = Layer.effect(
         }
         commands[Default.LOOP] = {
           name: Default.LOOP,
-          description: "按周期持续执行任务：/loop [60-3600秒] <任务>",
+          description: "按周期持续执行任务：/loop [5-3600秒] <任务>",
           source: "command",
           subtask: false,
           get template() {
@@ -244,7 +242,6 @@ const layer = Layer.effect(
           },
           hints: ["$ARGUMENTS"],
         }
-      }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
         if (isWorkMeshReserved(name)) continue
@@ -326,14 +323,13 @@ const layer = Layer.effect(
     const get = Effect.fn("Command.get")(function* (name: string) {
       const s = yield* InstanceState.get(state)
       const command = s.commands[name]
-      if (!command || !WorkMeshProduct.enabled || !s.localized.has(name)) return command
+      if (!command || !s.localized.has(name)) return command
       return localize(command, yield* language.get())
     })
 
     const list = Effect.fn("Command.list")(function* () {
       const s = yield* InstanceState.get(state)
       const commands = Object.values(s.commands)
-      if (!WorkMeshProduct.enabled) return commands
       const current = yield* language.get()
       return commands.map((command) => (s.localized.has(command.name) ? localize(command, current) : command))
     })

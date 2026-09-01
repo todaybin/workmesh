@@ -1,8 +1,8 @@
 import path from "node:path"
 import { WorkMeshRuntimeLayout } from "./runtime-layout"
 
-export const configLoadNames = ["workmesh.json", "workmesh.jsonc"] as const
-export const configWriteNames = ["workmesh.jsonc", "workmesh.json"] as const
+export const configLoadNames = ["opencode.json", "opencode.jsonc", "workmesh.json", "workmesh.jsonc"] as const
+export const configWriteNames = ["workmesh.jsonc", "workmesh.json", "opencode.jsonc", "opencode.json"] as const
 
 export function directory(projectRoot: string) {
   return WorkMeshRuntimeLayout.layoutForRoot(projectRoot).config
