@@ -1,4 +1,4 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+﻿import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import path from "path"
@@ -33,6 +33,7 @@ import { ConfigParse } from "./parse"
 import { ConfigPaths } from "./paths"
 import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
+import { ConfigV2Compat } from "./v2-compat"
 import { Npm } from "@opencode-ai/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { WorkMeshCustomization } from "@opencode-ai/core/workmesh/customization"
@@ -193,6 +194,34 @@ const layer = Layer.effect(
 
     const readConfigFile = (filepath: string) => fs.readFileStringSafe(filepath).pipe(Effect.orDie)
 
+    const migrateLegacyBrandConfig = Effect.fnUntraced(function* (dir: string) {
+      if (existsSync(path.join(dir, "workmesh.json")) || existsSync(path.join(dir, "workmesh.jsonc"))) return
+      const legacy = existsSync(path.join(dir, "opencode.jsonc"))
+        ? "opencode.jsonc"
+        : existsSync(path.join(dir, "opencode.json"))
+          ? "opencode.json"
+          : null
+      if (!legacy) return
+      // The brand config dir is workmesh's own location; a previously misnamed opencode.* file there
+      // is actually workmesh config. Rename it once so brand isolation no longer reads opencode names.
+      yield* Effect.tryPromise(() => fsNode.rename(path.join(dir, legacy), path.join(dir, "workmesh.jsonc"))).pipe(
+        Effect.catch(() => Effect.void),
+      )
+    })
+
+    const decodeConfig = Effect.fnUntraced(function* (input: unknown, source: string) {
+      const result = ConfigV2Compat.lower(normalizeLoadedConfig(input), source)
+      yield* Effect.forEach(result.diagnostics, (diagnostic) =>
+        Effect.logWarning("configuration compatibility diagnostic", {
+          source,
+          path: diagnostic.path,
+          kind: diagnostic.kind,
+          action: diagnostic.message,
+        }),
+      )
+      return ConfigParse.schema(ConfigV1.Info, result.value, source)
+    })
+
     const fetchRemoteJson = Effect.fnUntraced(function* <S extends Schema.Top>(
       url: string,
       headers: Record<string, string> | undefined,
@@ -233,7 +262,7 @@ const layer = Layer.effect(
         ),
       )
       const parsed = ConfigParse.jsonc(expanded, source)
-      const data = ConfigParse.schema(ConfigV1.Info, normalizeLoadedConfig(parsed), source)
+      const data = yield* decodeConfig(parsed, source)
       if (!("path" in options)) return data
 
       yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
@@ -252,21 +281,6 @@ const layer = Layer.effect(
       return yield* loadConfig(text, { path: filepath }, env)
     })
 
-    const migrateLegacyBrandConfig = Effect.fnUntraced(function* (dir: string) {
-      if (existsSync(path.join(dir, "workmesh.json")) || existsSync(path.join(dir, "workmesh.jsonc"))) return
-      const legacy = existsSync(path.join(dir, "opencode.jsonc"))
-        ? "opencode.jsonc"
-        : existsSync(path.join(dir, "opencode.json"))
-          ? "opencode.json"
-          : null
-      if (!legacy) return
-      // The brand config dir is workmesh's own location; a previously misnamed opencode.* file there
-      // is actually workmesh config. Rename it once so brand isolation no longer reads opencode names.
-      yield* Effect.tryPromise(() => fsNode.rename(path.join(dir, legacy), path.join(dir, "workmesh.jsonc"))).pipe(
-        Effect.catch(() => Effect.void),
-      )
-    })
-
     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
       let result: Info = {}
       const customConfig = explicitConfigPath(Flag.OPENCODE_CONFIG)
@@ -282,13 +296,15 @@ const layer = Layer.effect(
         }
       }
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env))
       if (WorkMeshProduct.enabled) {
-        yield* migrateLegacyBrandConfig(Global.Path.config)
         result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "workmesh.json"), env))
         result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "workmesh.jsonc"), env))
-      } else {
-        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json"), env))
-        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env))
+      }
+
+      if (WorkMeshProduct.enabled) {
+        yield* migrateLegacyBrandConfig(Global.Path.config)
       }
 
       const legacy = path.join(Global.Path.config, "config")
@@ -346,6 +362,8 @@ const layer = Layer.effect(
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
       function* (ctx: InstanceContext) {
         const auth = yield* authSvc.all().pipe(Effect.orDie)
+        const customConfig = explicitConfigPath(Flag.OPENCODE_CONFIG)
+        const customDirectory = explicitConfigPath(Flag.OPENCODE_CONFIG_DIR)
 
         let result: Info = {}
         const authEnv: Record<string, string> = {}
@@ -430,14 +448,13 @@ const layer = Layer.effect(
         const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
         yield* merge(Global.Path.config, global, "global")
 
-        const customConfig = explicitConfigPath(Flag.OPENCODE_CONFIG)
         if (customConfig) {
           yield* merge(customConfig, yield* loadFile(customConfig, authEnv))
           yield* Effect.logDebug("loaded custom config", { path: customConfig })
         }
 
         if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-          for (const file of yield* ConfigPaths.projectConfigFiles(ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
+          for (const file of yield* ConfigPaths.files("opencode", ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
             yield* merge(file, yield* loadFile(file, authEnv), "local")
           }
         }
@@ -448,7 +465,6 @@ const layer = Layer.effect(
 
         const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
 
-        const customDirectory = explicitConfigPath(Flag.OPENCODE_CONFIG_DIR)
         if (customDirectory) {
           yield* Effect.logDebug("loading config from OPENCODE_CONFIG_DIR", { path: customDirectory })
         }
@@ -496,7 +512,7 @@ const layer = Layer.effect(
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
-          // Auto-discovered project plugins are already local files, so ConfigPlugin.load
+          // Auto-discovered plugins under `.opencode/plugin(s)` are already local files, so ConfigPlugin.load
           // returns normalized Specs and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
           yield* mergePluginOrigins(dir, list)
@@ -552,10 +568,7 @@ const layer = Layer.effect(
 
         const managedDir = ConfigManaged.managedConfigDir()
         if (existsSync(managedDir)) {
-          const managedNames = WorkMeshProduct.enabled
-            ? WorkMeshCustomization.configLoadNames
-            : ["opencode.json", "opencode.jsonc"]
-          for (const file of managedNames) {
+          for (const file of ["opencode.json", "opencode.jsonc"]) {
             const source = path.join(managedDir, file)
             yield* merge(source, yield* loadFile(source), "global")
           }
@@ -665,8 +678,13 @@ const layer = Layer.effect(
       const dir = yield* InstanceState.directory
       const file = path.join(dir, "config.json")
       const existing = yield* loadFile(file)
+      const text = yield* readConfigFile(file)
+      const original = text ? ConfigParse.jsonc(text, file) : writable(existing)
       yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
+        .writeFileString(
+          file,
+          JSON.stringify(mergeDeep(isRecord(original) ? original : writable(existing), writable(config)), null, 2),
+        )
         .pipe(Effect.orDie)
     })
 
@@ -682,15 +700,16 @@ const layer = Layer.effect(
       let next: Info
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
-        const existing = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(before, file), file)
-        const merged = mergeDeep(writable(existing), patch)
+        const existing = ConfigParse.jsonc(before, file)
+        ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value, file)
+        const merged = mergeDeep(isRecord(existing) ? existing : {}, patch)
         const serialized = JSON.stringify(merged, null, 2)
+        next = yield* decodeConfig(merged, file)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
-        next = merged
       } else {
         const updated = patchJsonc(before, patch)
-        next = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(updated, file), file)
+        next = yield* decodeConfig(ConfigParse.jsonc(updated, file), file)
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
