@@ -59,6 +59,7 @@ import type {
   RunTuiConfig,
   StreamCommit,
 } from "./types"
+import type { DisplayLocale } from "@/workmesh/command-locale"
 
 type CycleResult = {
   modelLabel?: string
@@ -84,6 +85,7 @@ type RunFooterOptions = {
   theme: RunTheme
   keymap: Keymap<Renderable, KeyEvent>
   tuiConfig: RunTuiConfig
+  locale: DisplayLocale
   backgroundSubagents: boolean
   diffStyle: RunDiffStyle
   onPermissionReply: (input: PermissionReply) => void | Promise<void>
@@ -202,6 +204,8 @@ export class RunFooter implements FooterApi {
   private setSubagent: (next: FooterSubagentState) => void
   private queuedPrompts: Accessor<FooterQueuedPrompt[]>
   private setQueuedPrompts: Setter<FooterQueuedPrompt[]>
+  private goal: Accessor<{ condition: string; status: "active" | "paused" | "stalled" | "complete" } | undefined>
+  private setGoal: Setter<{ condition: string; status: "active" | "paused" | "stalled" | "complete" } | undefined>
   private promptRoute: FooterPromptRoute = { type: "composer" }
   private subagentMenuRows = SUBAGENT_ROWS
   private autocomplete = false
@@ -288,6 +292,9 @@ export class RunFooter implements FooterApi {
     const [queuedPrompts, setQueuedPrompts] = createSignal<FooterQueuedPrompt[]>([])
     this.queuedPrompts = queuedPrompts
     this.setQueuedPrompts = setQueuedPrompts
+    const [goal, setGoal] = createSignal<{ condition: string; status: "active" | "paused" | "stalled" | "complete" } | undefined>(undefined)
+    this.goal = goal
+    this.setGoal = setGoal
     this.base = Math.max(1, renderer.footerHeight - TEXTAREA_MIN_ROWS)
     this.scrollback = this.createScrollback(options.wrote ?? false)
 
@@ -320,6 +327,7 @@ export class RunFooter implements FooterApi {
               theme: footer.theme,
               diffStyle: options.diffStyle,
               tuiConfig: options.tuiConfig,
+              locale: options.locale,
               backgroundSubagents: options.backgroundSubagents,
               history: options.history,
               agent: options.agentLabel,
@@ -340,6 +348,7 @@ export class RunFooter implements FooterApi {
               onRows: footer.syncRows,
               onLayout: footer.syncLayout,
               onStatus: footer.setStatus,
+              goal: footer.goal,
               onSubagentSelect: options.onSubagentSelect,
               onQueuedRemove: footer.handleQueuedRemove,
             })
@@ -466,6 +475,15 @@ export class RunFooter implements FooterApi {
 
       this.setSubagent(next.state)
       this.applyHeight()
+      return
+    }
+
+    if (next.type === "goal") {
+      if (this.isGone) {
+        return
+      }
+
+      this.setGoal(next.goal)
       return
     }
 

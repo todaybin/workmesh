@@ -198,6 +198,7 @@ async function renderFooter(
           subagent={subagents}
           theme={input.theme ?? (() => RUN_THEME_FALLBACK)}
           tuiConfig={config}
+          locale="zh-CN"
           backgroundSubagents={input.backgroundSubagents ?? true}
           agent="opencode"
           onSubmit={input.onSubmit ?? (() => true)}
@@ -987,6 +988,7 @@ test("direct footer shows editable prompts and additional queued work while runn
           ]}
           theme={() => RUN_THEME_FALLBACK}
           tuiConfig={tuiConfig}
+          locale="zh-CN"
           backgroundSubagents={true}
           agent="opencode"
           onSubmit={() => true}

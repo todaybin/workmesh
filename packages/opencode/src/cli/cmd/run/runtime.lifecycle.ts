@@ -16,6 +16,8 @@ import { openEditor } from "@opencode-ai/tui/editor"
 import { registerOpencodeKeymap } from "@opencode-ai/tui/keymap"
 import { Session as SessionApi } from "@/session/session"
 import * as Locale from "@/util/locale"
+import { WorkMeshCommandLocale } from "@/workmesh/command-locale"
+import { WorkMeshLanguage } from "@/workmesh/language"
 import { resolveInteractiveStdin } from "./runtime.stdin"
 import { entrySplash, exitSplash, splashMeta } from "./splash"
 import { resolveRunTheme } from "./theme"
@@ -211,6 +213,9 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       model: input.model,
       variant: input.variant,
     })
+    const locale = WorkMeshCommandLocale.resolve(
+      await WorkMeshLanguage.readForRoot(input.directory).catch(() => "zh-CN" as const),
+    )
     const footerTask = import("./footer")
     const wrote = queueSplash(
       renderer,
@@ -244,6 +249,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       wrote,
       keymap,
       tuiConfig: input.tuiConfig,
+      locale,
       backgroundSubagents: input.backgroundSubagents,
       diffStyle: input.tuiConfig.diff_style ?? "auto",
       onPermissionReply: input.onPermissionReply,

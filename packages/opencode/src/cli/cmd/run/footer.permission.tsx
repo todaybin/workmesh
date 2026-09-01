@@ -32,6 +32,7 @@ import {
 import { footerWidthPolicy } from "./footer.width"
 import { toolFiletype } from "./tool"
 import { transparent, type RunBlockTheme, type RunFooterTheme } from "./theme"
+import type { DisplayLocale } from "@/workmesh/command-locale"
 import type { PermissionReply, RunDiffStyle } from "./types"
 
 function buttons(
@@ -41,6 +42,7 @@ function buttons(
   disabled: boolean,
   onHover: (option: PermissionOption) => void,
   onSelect: (option: PermissionOption) => void,
+  locale: DisplayLocale,
 ) {
   return (
     <box flexDirection="row" gap={1} flexShrink={0}>
@@ -57,7 +59,7 @@ function buttons(
               if (!disabled) onSelect(option)
             }}
           >
-            <text fg={option === selected ? theme.surface : theme.muted}>{permissionLabel(option)}</text>
+            <text fg={option === selected ? theme.surface : theme.muted}>{permissionLabel(option, locale)}</text>
           </box>
         )}
       </For>
@@ -133,26 +135,28 @@ export function RunPermissionBody(props: {
   request: PermissionRequest
   theme: RunFooterTheme
   block: RunBlockTheme
+  locale: DisplayLocale
   diffStyle?: RunDiffStyle
   onReply: (input: PermissionReply) => void | Promise<void>
 }) {
   const dims = useTerminalDimensions()
   const [state, setState] = createSignal(createPermissionBodyState(props.request.id))
-  const info = createMemo(() => permissionInfo(props.request))
+  const info = createMemo(() => permissionInfo(props.request, props.locale))
+  const t = (zh: string, en: string) => (props.locale === "zh-CN" ? zh : en)
   const ft = createMemo(() => toolFiletype(info().file))
   const narrow = createMemo(() => footerWidthPolicy(dims().width).dialog.narrow)
   const opts = createMemo(() => permissionOptions(state().stage))
   const busy = createMemo(() => state().submitting)
   const title = createMemo(() => {
     if (state().stage === "always") {
-      return "Always allow"
+      return t("始终允许", "Always allow")
     }
 
     if (state().stage === "reject") {
-      return "Reject permission"
+      return t("拒绝权限", "Reject permission")
     }
 
-    return "Permission required"
+    return t("需要授权", "Permission required")
   })
 
   createEffect(() => {
@@ -284,7 +288,7 @@ export function RunPermissionBody(props: {
           </Match>
           <Match when={state().stage === "reject"}>
             <box paddingLeft={1}>
-              <text fg={props.theme.muted}>Tell OpenCode what to do differently</text>
+              <text fg={props.theme.muted}>{t("告诉 OpenCode 需要如何调整", "Tell OpenCode what to do differently")}</text>
             </box>
           </Match>
         </Switch>
@@ -324,9 +328,9 @@ export function RunPermissionBody(props: {
               <Show
                 when={!busy()}
                 fallback={
-                  <text fg={props.theme.muted} wrapMode="word" flexShrink={0}>
-                    Waiting for permission event...
-                  </text>
+                   <text fg={props.theme.muted} wrapMode="word" flexShrink={0}>
+                     {t("等待权限事件…", "Waiting for permission event...")}
+                   </text>
                 }
               >
                 <box flexDirection="row" gap={2} flexShrink={0}>
@@ -392,7 +396,7 @@ export function RunPermissionBody(props: {
                   </Show>
                   <Show when={!info().diff && info().lines.length === 0}>
                     <box paddingLeft={1}>
-                      <text fg={props.theme.muted}>No diff provided</text>
+                      <text fg={props.theme.muted}>{t("未提供差异", "No diff provided")}</text>
                     </box>
                   </Show>
                 </box>
@@ -410,7 +414,7 @@ export function RunPermissionBody(props: {
                 }}
               >
                 <box width="100%" flexDirection="column" gap={1} paddingLeft={1}>
-                  <For each={permissionAlwaysLines(props.request)}>
+                   <For each={permissionAlwaysLines(props.request, props.locale)}>
                     {(line) => (
                       <text fg={props.theme.text} wrapMode="word">
                         {line}
@@ -444,24 +448,25 @@ export function RunPermissionBody(props: {
               setState((prev) => permissionHover(prev, option))
             },
             run,
+            props.locale,
           )}
           <Show
             when={!busy()}
             fallback={
               <text fg={props.theme.muted} wrapMode="word" flexShrink={0}>
-                Waiting for permission event...
+                {t("等待权限事件…", "Waiting for permission event...")}
               </text>
             }
           >
             <box flexDirection="row" gap={2} flexShrink={0}>
               <text fg={props.theme.text}>
-                {"⇆"} <span style={{ fg: props.theme.muted }}>select</span>
+                {"⇆"} <span style={{ fg: props.theme.muted }}>{t("选择", "select")}</span>
               </text>
               <text fg={props.theme.text}>
-                enter <span style={{ fg: props.theme.muted }}>confirm</span>
+                enter <span style={{ fg: props.theme.muted }}>{t("确认", "confirm")}</span>
               </text>
               <text fg={props.theme.text}>
-                esc <span style={{ fg: props.theme.muted }}>{state().stage === "always" ? "cancel" : "reject"}</span>
+                esc <span style={{ fg: props.theme.muted }}>{t(state().stage === "always" ? "取消" : "拒绝", state().stage === "always" ? "cancel" : "reject")}</span>
               </text>
             </box>
           </Show>

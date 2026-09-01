@@ -364,6 +364,26 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     },
   })
   const footer = shell.footer
+  const goalEventController = new AbortController()
+  void (async () => {
+    try {
+      const result = await ctx.sdk.event.subscribe({ directory: ctx.directory }, { signal: goalEventController.signal } as never)
+      for await (const evt of result.stream) {
+        if (footer.isClosed) break
+        if (evt.type !== "command.executed") continue
+        if (evt.properties.name !== "goal") continue
+        if (evt.properties.sessionID !== state.sessionID) continue
+        let goal: { condition: string; status: "active" | "paused" | "stalled" | "complete" } | undefined
+        try {
+          goal = (JSON.parse(evt.properties.arguments) as { condition: string; status: "active" | "paused" | "stalled" | "complete" } | null) ?? undefined
+        } catch {
+          goal = undefined
+        }
+        footer.event({ type: "goal", goal })
+      }
+    } catch {}
+  })()
+  void footer.onClose(() => goalEventController.abort())
   const rememberLocal = (commit: StreamCommit, after?: LocalReplayAnchor) => {
     state.localRows = [...state.localRows, { commit, after }].slice(-LOCAL_REPLAY_ROW_LIMIT)
   }

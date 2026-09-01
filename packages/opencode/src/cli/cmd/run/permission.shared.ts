@@ -14,6 +14,7 @@
 // permissionInfo() extracts display info (icon, title, lines, diff) from
 // the request, delegating to tool.ts for tool-specific formatting.
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
+import type { DisplayLocale } from "@/workmesh/command-locale"
 import type { PermissionReply } from "./types"
 import { toolPath, toolPermissionInfo } from "./tool"
 
@@ -89,7 +90,7 @@ export function permissionOptions(stage: PermissionStage): PermissionOption[] {
   return []
 }
 
-export function permissionInfo(request: PermissionRequest): PermissionInfo {
+export function permissionInfo(request: PermissionRequest, locale: DisplayLocale = "en-US"): PermissionInfo {
   const pats = patterns(request)
   const input = data(request)
   const info = toolPermissionInfo(request.permission, input, dict(request.metadata), pats)
@@ -103,7 +104,10 @@ export function permissionInfo(request: PermissionRequest): PermissionInfo {
     const dir = raw.includes("*") ? raw.slice(0, raw.indexOf("*")).replace(/[\\/]+$/, "") : raw
     return {
       icon: "←",
-      title: `Access external directory ${toolPath(dir, { home: true })}`,
+      title:
+        locale === "zh-CN"
+          ? `访问外部目录 ${toolPath(dir, { home: true })}`
+          : `Access external directory ${toolPath(dir, { home: true })}`,
       lines: pats.map((item) => `- ${item}`),
     }
   }
@@ -111,30 +115,48 @@ export function permissionInfo(request: PermissionRequest): PermissionInfo {
   if (request.permission === "doom_loop") {
     return {
       icon: "⟳",
-      title: "Continue after repeated failures",
-      lines: ["This keeps the session running despite repeated failures."],
+      title: locale === "zh-CN" ? "在多次失败后继续" : "Continue after repeated failures",
+      lines: [
+        locale === "zh-CN"
+          ? "即使多次失败，这也会让会话继续运行。"
+          : "This keeps the session running despite repeated failures.",
+      ],
     }
   }
 
   return {
     icon: "⚙",
-    title: `Call tool ${request.permission}`,
+    title: locale === "zh-CN" ? `调用工具 ${request.permission}` : `Call tool ${request.permission}`,
     lines: [`Tool: ${request.permission}`],
   }
 }
 
-export function permissionAlwaysLines(request: PermissionRequest): string[] {
+export function permissionAlwaysLines(request: PermissionRequest, locale: DisplayLocale = "en-US"): string[] {
   if (request.always.length === 1 && request.always[0] === "*") {
-    return [`This will allow ${request.permission} until OpenCode is restarted.`]
+    return [
+      locale === "zh-CN"
+        ? `这将允许 ${request.permission}，直到 OpenCode 重启。`
+        : `This will allow ${request.permission} until OpenCode is restarted.`,
+    ]
   }
 
   return [
-    "This will allow the following patterns until OpenCode is restarted.",
+    locale === "zh-CN"
+      ? "这将允许以下模式，直到 OpenCode 重启。"
+      : "This will allow the following patterns until OpenCode is restarted.",
     ...request.always.map((item) => `- ${item}`),
   ]
 }
 
-export function permissionLabel(option: PermissionOption): string {
+export function permissionLabel(option: PermissionOption, locale: DisplayLocale = "en-US"): string {
+  if (locale === "zh-CN") {
+    if (option === "once") return "允许一次"
+    if (option === "always") return "始终允许"
+    if (option === "reject") return "拒绝"
+    if (option === "confirm") return "确认"
+    return "取消"
+  }
+
   if (option === "once") return "Allow once"
   if (option === "always") return "Allow always"
   if (option === "reject") return "Reject"

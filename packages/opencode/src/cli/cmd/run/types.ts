@@ -279,6 +279,13 @@ export type FooterEvent =
       type: "stream.subagent"
       state: FooterSubagentState
     }
+  | {
+      type: "goal"
+      goal: {
+        condition: string
+        status: "active" | "paused" | "stalled" | "complete"
+      } | undefined
+    }
 
 export type PermissionReply = Parameters<OpencodeClient["permission"]["reply"]>[0]
 

@@ -4,6 +4,7 @@ import { existsSync } from "fs"
 import os from "os"
 import path from "path"
 import { Process } from "@/util/process"
+import { WorkMeshProduct } from "@/workmesh/product"
 
 const MANAGED_PLIST_DOMAIN = "ai.opencode.managed"
 
@@ -18,13 +19,14 @@ const PLIST_META = new Set([
 ])
 
 function systemManagedConfigDir(): string {
+  const brand = WorkMeshProduct.enabled ? "workmesh" : "opencode"
   switch (process.platform) {
     case "darwin":
-      return "/Library/Application Support/opencode"
+      return `/Library/Application Support/${brand}`
     case "win32":
-      return path.join(process.env.ProgramData || "C:\\ProgramData", "opencode")
+      return path.join(process.env.ProgramData || "C:\\ProgramData", brand)
     default:
-      return "/etc/opencode"
+      return `/etc/${brand}`
   }
 }
 

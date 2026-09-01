@@ -53,6 +53,7 @@ import type {
   RunResource,
   RunTuiConfig,
 } from "./types"
+import type { DisplayLocale } from "@/workmesh/command-locale"
 import type { RunTheme } from "./theme"
 import { modelInfo } from "./variant.shared"
 
@@ -89,6 +90,7 @@ type RunFooterViewProps = {
   theme: () => RunTheme
   diffStyle?: RunDiffStyle
   tuiConfig: RunTuiConfig
+  locale: DisplayLocale
   backgroundSubagents: boolean
   history?: RunPrompt[]
   agent: string
@@ -109,6 +111,7 @@ type RunFooterViewProps = {
   onRows: (rows: number) => void
   onLayout: (input: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }) => void
   onStatus: (text: string) => void
+  goal?: () => { condition: string; status: "active" | "paused" | "stalled" | "complete" } | undefined
   onSubagentSelect?: (sessionID: string | undefined) => void
   onQueuedRemove: (messageID: string) => Promise<boolean>
 }
@@ -489,6 +492,23 @@ export function RunFooterView(props: RunFooterViewProps) {
   })
   const sectionSeparator = () => <span style={{ fg: theme().muted }}>· </span>
 
+  const goalHint = createMemo(() => {
+    const goal = props.goal?.()
+    if (!goal || (goal.status !== "stalled" && goal.status !== "paused")) {
+      return
+    }
+
+    if (props.locale === "zh-CN") {
+      return goal.status === "stalled"
+        ? "目标挂起（/goal resume 继续）"
+        : "目标已暂停（/goal resume 继续）"
+    }
+
+    return goal.status === "stalled"
+      ? "Goal stalled (/goal resume)"
+      : "Goal paused (/goal resume)"
+  })
+
   createEffect(() => {
     props.onRequestExit?.(composer.requestExit)
   })
@@ -782,6 +802,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                             request={permission()!.request}
                             theme={theme()}
                             block={block()}
+                            locale={props.locale}
                             diffStyle={props.diffStyle}
                             onReply={props.onPermissionReply}
                           />
@@ -906,6 +927,19 @@ export function RunFooterView(props: RunFooterViewProps) {
                         </Show>
                         <span style={{ fg: theme().text }}>{hint().key}</span>{" "}
                         <span style={{ fg: theme().muted }}>{hint().label}</span>
+                      </text>
+                    </box>
+                  )}
+                </Show>
+
+                <Show when={goalHint()}>
+                  {(goalLabel) => (
+                    <box paddingRight={1} backgroundColor="transparent" flexShrink={0} maxWidth={40}>
+                      <text fg={theme().warning} wrapMode="none" truncate>
+                        <Show when={hasActivityMeta() || hasModelStatus() || hasContextHints() || commandHint()}>
+                          {sectionSeparator()}
+                        </Show>
+                        {goalLabel()}
                       </text>
                     </box>
                   )}
